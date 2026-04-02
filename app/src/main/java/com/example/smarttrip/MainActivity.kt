@@ -1,9 +1,11 @@
 package com.example.smarttrip
 
+import android.Manifest
+import android.content.pm.PackageManager
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.foundation.background
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
@@ -21,8 +23,20 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
+import com.google.android.gms.location.LocationServices
 
 class MainActivity : ComponentActivity() {
+
+    private var onPermissionGranted: (() -> Unit)? = null
+
+    private val requestPermissionLauncher =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { isGranted ->
+            if (isGranted) {
+                onPermissionGranted?.invoke()
+            }
+        }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
@@ -31,15 +45,51 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = Color(0xFFF6F7FB)
                 ) {
-                    SmartTripApp()
+                    SmartTripApp(
+                        onRequestLocation = { onLocationReceived ->
+                            getCurrentLocationWithPermission(onLocationReceived)
+                        }
+                    )
                 }
             }
+        }
+    }
+
+    private fun getCurrentLocationWithPermission(onLocationReceived: (String, String) -> Unit) {
+        val permission = Manifest.permission.ACCESS_FINE_LOCATION
+
+        if (ContextCompat.checkSelfPermission(this, permission) == PackageManager.PERMISSION_GRANTED) {
+            getCurrentLocation(onLocationReceived)
+        } else {
+            onPermissionGranted = {
+                getCurrentLocation(onLocationReceived)
+            }
+            requestPermissionLauncher.launch(permission)
+        }
+    }
+
+    private fun getCurrentLocation(onLocationReceived: (String, String) -> Unit) {
+        val fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
+
+        try {
+            fusedLocationClient.lastLocation.addOnSuccessListener { location ->
+                if (location != null) {
+                    onLocationReceived(
+                        location.latitude.toString(),
+                        location.longitude.toString()
+                    )
+                } else {
+                    onLocationReceived("Position indisponible", "Position indisponible")
+                }
+            }
+        } catch (e: SecurityException) {
+            onLocationReceived("Permission refusée", "Permission refusée")
         }
     }
 }
 
 @Composable
-fun SmartTripApp() {
+fun SmartTripApp(onRequestLocation: ((String, String) -> Unit) -> Unit) {
     var currentScreen by remember { mutableStateOf("home") }
 
     when (currentScreen) {
@@ -47,7 +97,8 @@ fun SmartTripApp() {
             onCreateTripClick = { currentScreen = "trip" }
         )
         "trip" -> TripScreen(
-            onBackClick = { currentScreen = "home" }
+            onBackClick = { currentScreen = "home" },
+            onRequestLocation = onRequestLocation
         )
     }
 }
@@ -119,10 +170,15 @@ fun HomeScreen(onCreateTripClick: () -> Unit) {
 }
 
 @Composable
-fun TripScreen(onBackClick: () -> Unit) {
+fun TripScreen(
+    onBackClick: () -> Unit,
+    onRequestLocation: ((String, String) -> Unit) -> Unit
+) {
     var tripStatus by remember { mutableStateOf("Voyage non démarré") }
     var poiCount by remember { mutableStateOf(0) }
     var photoCount by remember { mutableStateOf(0) }
+    var latitude by remember { mutableStateOf("Non disponible") }
+    var longitude by remember { mutableStateOf("Non disponible") }
 
     Column(
         modifier = Modifier
@@ -166,6 +222,22 @@ fun TripScreen(onBackClick: () -> Unit) {
                     fontSize = 16.sp,
                     color = Color(0xFF333333)
                 )
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Text(
+                    text = "Latitude : $latitude",
+                    fontSize = 15.sp,
+                    color = Color(0xFF444444)
+                )
+
+                Spacer(modifier = Modifier.height(6.dp))
+
+                Text(
+                    text = "Longitude : $longitude",
+                    fontSize = 15.sp,
+                    color = Color(0xFF444444)
+                )
             }
         }
 
@@ -176,7 +248,13 @@ fun TripScreen(onBackClick: () -> Unit) {
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Button(
-                onClick = { tripStatus = "Voyage démarré 🚀" },
+                onClick = {
+                    tripStatus = "Voyage démarré 🚀"
+                    onRequestLocation { lat, lon ->
+                        latitude = lat
+                        longitude = lon
+                    }
+                },
                 modifier = Modifier.weight(1f),
                 shape = RoundedCornerShape(14.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32))
