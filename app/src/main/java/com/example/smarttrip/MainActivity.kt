@@ -9,6 +9,7 @@ import android.os.Looper
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
@@ -163,19 +164,47 @@ fun HomeScreen(onCreateTripClick: () -> Unit) {
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Text(
-            text = "SmartTrip",
-            fontSize = 32.sp,
-            fontWeight = FontWeight.Bold,
-            color = Color(0xFF1F3C88)
-        )
+        // Icône carrée bleue
+        Box(
+            modifier = Modifier
+                .size(90.dp)
+                .background(
+                    color = Color(0xFF1F3C88),
+                    shape = RoundedCornerShape(20.dp)
+                ),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = "✈",
+                fontSize = 36.sp,
+                color = Color.White
+            )
+        }
 
-        Spacer(modifier = Modifier.height(12.dp))
+        Spacer(modifier = Modifier.height(16.dp))
+
+        Row {
+            Text(
+                text = "Smart",
+                fontSize = 38.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color(0xFF1F3C88)
+            )
+            Text(
+                text = "Trip",
+                fontSize = 38.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color(0xFFFF7043)
+            )
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
 
         Text(
             text = "Ton compagnon de voyage intelligent",
-            fontSize = 18.sp,
-            color = Color.DarkGray
+            fontSize = 15.sp,
+            color = Color(0xFF5C7BB5),
+            letterSpacing = 1.sp
         )
 
         Spacer(modifier = Modifier.height(32.dp))
@@ -236,7 +265,6 @@ fun TripScreen(
     val gpsPoints = remember { mutableStateListOf<GpsPoint>() }
     val context = LocalContext.current
 
-    // Dialog POI
     if (showPoiDialog) {
         PoiDialog(
             currentLat = latitude,
@@ -340,7 +368,6 @@ fun TripScreen(
         ) {
             Column(modifier = Modifier.padding(20.dp)) {
                 Text(text = "Actions", fontWeight = FontWeight.SemiBold, fontSize = 18.sp)
-
                 Spacer(modifier = Modifier.height(16.dp))
 
                 Button(
