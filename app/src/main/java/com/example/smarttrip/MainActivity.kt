@@ -142,12 +142,26 @@ fun SmartTripApp(
     onStopTracking: () -> Unit
 ) {
     var currentScreen by remember { mutableStateOf("home") }
+    var tripName by remember { mutableStateOf("") }
+    var showNameDialog by remember { mutableStateOf(false) }
+
+    if (showNameDialog) {
+        TripNameDialog(
+            onDismiss = { showNameDialog = false },
+            onConfirm = { name ->
+                tripName = name
+                showNameDialog = false
+                currentScreen = "trip"
+            }
+        )
+    }
 
     when (currentScreen) {
         "home" -> HomeScreen(
-            onCreateTripClick = { currentScreen = "trip" }
+            onCreateTripClick = { showNameDialog = true }
         )
         "trip" -> TripScreen(
+            tripName = tripName,
             onBackClick = { currentScreen = "home" },
             onStartTracking = onStartTracking,
             onStopTracking = onStopTracking
@@ -164,7 +178,6 @@ fun HomeScreen(onCreateTripClick: () -> Unit) {
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        // Icône carrée bleue
         Box(
             modifier = Modifier
                 .size(90.dp)
@@ -250,7 +263,52 @@ fun HomeScreen(onCreateTripClick: () -> Unit) {
 }
 
 @Composable
+fun TripNameDialog(
+    onDismiss: () -> Unit,
+    onConfirm: (String) -> Unit
+) {
+    var name by remember { mutableStateOf("") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Nom du voyage", fontWeight = FontWeight.Bold) },
+        text = {
+            Column {
+                Text(
+                    text = "Donne un nom à ton aventure !",
+                    fontSize = 14.sp,
+                    color = Color.Gray
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("Ex: Vacances à Rome...") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    if (name.isNotBlank()) onConfirm(name)
+                },
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1F3C88))
+            ) {
+                Text("C'est parti !")
+            }
+        },
+        dismissButton = {
+            OutlinedButton(onClick = onDismiss) {
+                Text("Annuler")
+            }
+        }
+    )
+}
+
+@Composable
 fun TripScreen(
+    tripName: String,
     onBackClick: () -> Unit,
     onStartTracking: ((Double, Double) -> Unit) -> Unit,
     onStopTracking: () -> Unit
@@ -284,7 +342,7 @@ fun TripScreen(
             .padding(20.dp)
     ) {
         Text(
-            text = "Mon voyage",
+            text = tripName,
             fontSize = 28.sp,
             fontWeight = FontWeight.Bold,
             color = Color(0xFF1F3C88)
