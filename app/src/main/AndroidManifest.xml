@@ -18,6 +18,10 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.SmartTrip">
 
+        <meta-data
+            android:name="com.google.android.geo.API_KEY"
+            android:value="AIzaSyDmRaZ2L1mbR8FjfPPNDSMWDA3BVwKxAeE"/>
+
         <activity
             android:name=".MainActivity"
             android:exported="true"
