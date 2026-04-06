@@ -206,6 +206,7 @@ fun SmartTripApp(
     var tripName by remember { mutableStateOf("") }
     var tripId by remember { mutableStateOf("") }
     var showNameDialog by remember { mutableStateOf(false) }
+    val gpsPoints = remember { mutableStateListOf<GpsPoint>() }
     val context = LocalContext.current
 
     if (showNameDialog) {
@@ -228,9 +229,16 @@ fun SmartTripApp(
         "trip" -> TripScreen(
             tripName = tripName,
             tripId = tripId,
+            gpsPoints = gpsPoints,
             onBackClick = { currentScreen = "home" },
             onStartTracking = onStartTracking,
-            onStopTracking = onStopTracking
+            onStopTracking = onStopTracking,
+            onViewMapClick = { currentScreen = "map" }
+        )
+        "map" -> MapScreen(
+            tripName = tripName,
+            gpsPoints = gpsPoints,
+            onBackClick = { currentScreen = "trip" }
         )
     }
 }
@@ -376,9 +384,11 @@ fun TripNameDialog(
 fun TripScreen(
     tripName: String,
     tripId: String,
+    gpsPoints: androidx.compose.runtime.snapshots.SnapshotStateList<GpsPoint>,
     onBackClick: () -> Unit,
     onStartTracking: ((Double, Double) -> Unit) -> Unit,
-    onStopTracking: () -> Unit
+    onStopTracking: () -> Unit,
+    onViewMapClick: () -> Unit
 ) {
     var tripStatus by remember { mutableStateOf("Voyage non demarre") }
     var poiCount by remember { mutableStateOf(0) }
@@ -387,7 +397,6 @@ fun TripScreen(
     var longitude by remember { mutableStateOf("Non disponible") }
     var isTracking by remember { mutableStateOf(false) }
     var showPoiDialog by remember { mutableStateOf(false) }
-    val gpsPoints = remember { mutableStateListOf<GpsPoint>() }
     val context = LocalContext.current
 
     if (showPoiDialog) {
@@ -521,6 +530,17 @@ fun TripScreen(
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6A1B9A))
                 ) {
                     Text("Prendre une photo")
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Button(
+                    onClick = onViewMapClick,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00796B))
+                ) {
+                    Text("Voir la carte")
                 }
             }
         }
