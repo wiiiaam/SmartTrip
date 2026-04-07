@@ -248,7 +248,8 @@ fun SmartTripApp(
 
     when (currentScreen) {
         "home" -> HomeScreen(
-            onCreateTripClick = { showNameDialog = true }
+            onCreateTripClick = { showNameDialog = true },
+            onHistoryClick = { currentScreen = "history" }
         )
         "trip" -> TripScreen(
             tripName = tripName,
@@ -266,11 +267,17 @@ fun SmartTripApp(
             pois = pois,
             onBackClick = { currentScreen = "trip" }
         )
+        "history" -> HistoryScreen(
+            onBackClick = { currentScreen = "home" }
+        )
     }
 }
 
 @Composable
-fun HomeScreen(onCreateTripClick: () -> Unit) {
+fun HomeScreen(
+    onCreateTripClick: () -> Unit,
+    onHistoryClick: () -> Unit
+) {
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -350,12 +357,23 @@ fun HomeScreen(onCreateTripClick: () -> Unit) {
 
                 Button(
                     onClick = onCreateTripClick,
+                    modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(14.dp),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = Color(0xFF1F3C88)
                     )
                 ) {
                     Text("Creer mon aventure")
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                OutlinedButton(
+                    onClick = onHistoryClick,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp)
+                ) {
+                    Text("Mes voyages", color = Color(0xFF1F3C88))
                 }
             }
         }
