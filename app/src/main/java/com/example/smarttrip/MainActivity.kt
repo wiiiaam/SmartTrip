@@ -15,9 +15,22 @@ import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.*
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
 import androidx.compose.runtime.*
+import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -55,7 +68,9 @@ class MainActivity : ComponentActivity() {
     private var onPhotoTaken: ((Uri) -> Unit)? = null
     private var currentPhotoUri: Uri? = null
 
-    private val database = FirebaseDatabase.getInstance("https://smarttrip-50485-default-rtdb.europe-west1.firebasedatabase.app")
+    private val database = FirebaseDatabase.getInstance(
+        "https://smarttrip-50485-default-rtdb.europe-west1.firebasedatabase.app"
+    )
     private val storage = FirebaseStorage.getInstance()
 
     private val requestPermissionLauncher =
@@ -74,22 +89,50 @@ class MainActivity : ComponentActivity() {
             }
         }
 
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+
+        fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
+
+        setContent {
+            MaterialTheme {
+                Surface(
+                    modifier = Modifier.fillMaxSize(),
+                    color = Color(0xFFF6F7FB)
+                ) {
+                    SmartTripApp(
+                        onStartTracking = { onLocationUpdate ->
+                            startTrackingWithPermission(onLocationUpdate)
+                        },
+                        onStopTracking = {
+                            stopTracking()
+                        }
+                    )
+                }
+            }
+        }
+    }
+
     fun getBatteryLevel(): Int {
         val batteryIntent = registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
         val level = batteryIntent?.getIntExtra(BatteryManager.EXTRA_LEVEL, -1) ?: -1
         val scale = batteryIntent?.getIntExtra(BatteryManager.EXTRA_SCALE, -1) ?: -1
+
         return if (level == -1 || scale == -1) 50
         else (level.toFloat() / scale.toFloat() * 100).toInt()
     }
 
     fun calculateDistance(points: List<GpsPoint>): Double {
         if (points.size < 2) return 0.0
+
         var totalDistance = 0.0
         for (i in 0 until points.size - 1) {
             val results = FloatArray(1)
             android.location.Location.distanceBetween(
-                points[i].latitude, points[i].longitude,
-                points[i + 1].latitude, points[i + 1].longitude,
+                points[i].latitude,
+                points[i].longitude,
+                points[i + 1].latitude,
+                points[i + 1].longitude,
                 results
             )
             totalDistance += results[0]
@@ -99,16 +142,19 @@ class MainActivity : ComponentActivity() {
 
     fun launchCamera(onResult: (Uri) -> Unit) {
         onPhotoTaken = onResult
+
         val photoFile = File.createTempFile(
             "photo_${System.currentTimeMillis()}",
             ".jpg",
             cacheDir
         )
+
         val uri = FileProvider.getUriForFile(
             this,
             "${packageName}.provider",
             photoFile
         )
+
         currentPhotoUri = uri
         takePictureLauncher.launch(uri)
     }
@@ -117,17 +163,29 @@ class MainActivity : ComponentActivity() {
         return try {
             val geocoder = Geocoder(this, Locale.getDefault())
             val addresses = geocoder.getFromLocation(lat, lon, 1)
+
             if (!addresses.isNullOrEmpty()) {
                 val address = addresses[0]
                 buildString {
                     if (address.thoroughfare != null) append(address.thoroughfare + ", ")
                     if (address.locality != null) append(address.locality + ", ")
                     if (address.countryName != null) append(address.countryName)
-                }
-            } else "Adresse inconnue"
+                }.ifBlank { "Adresse inconnue" }
+            } else {
+                "Adresse inconnue"
+            }
         } catch (e: Exception) {
             "Adresse inconnue"
         }
+    }
+
+    fun saveTrip(tripId: String, tripName: String) {
+        val ref = database.getReference("trips/$tripId")
+        val trip = mapOf(
+            "name" to tripName,
+            "createdAt" to System.currentTimeMillis()
+        )
+        ref.child("info").setValue(trip)
     }
 
     fun saveGpsPoint(tripId: String, lat: Double, lon: Double) {
@@ -140,7 +198,14 @@ class MainActivity : ComponentActivity() {
         ref.push().setValue(point)
     }
 
-    fun savePoi(tripId: String, name: String, type: String, lat: String, lon: String, address: String) {
+    fun savePoi(
+        tripId: String,
+        name: String,
+        type: String,
+        lat: String,
+        lon: String,
+        address: String
+    ) {
         val ref = database.getReference("trips/$tripId/pois")
         val poi = PoiPoint(
             name = name,
@@ -153,18 +218,10 @@ class MainActivity : ComponentActivity() {
         ref.push().setValue(poi)
     }
 
-    fun saveTrip(tripId: String, tripName: String) {
-        val ref = database.getReference("trips/$tripId")
-        val trip = mapOf(
-            "name" to tripName,
-            "createdAt" to System.currentTimeMillis()
-        )
-        ref.child("info").setValue(trip)
-    }
-
     fun savePhoto(tripId: String, uri: Uri, lat: String, lon: String) {
         val storageRef = storage.reference
             .child("trips/$tripId/photos/${System.currentTimeMillis()}.jpg")
+
         storageRef.putFile(uri).addOnSuccessListener {
             storageRef.downloadUrl.addOnSuccessListener { downloadUri ->
                 val ref = database.getReference("trips/$tripId/photos")
@@ -179,33 +236,27 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
-        setContent {
-            MaterialTheme {
-                Surface(
-                    modifier = Modifier.fillMaxSize(),
-                    color = Color(0xFFF6F7FB)
-                ) {
-                    SmartTripApp(
-                        onStartTracking = { onLocationUpdate ->
-                            startTrackingWithPermission(onLocationUpdate)
-                        },
-                        onStopTracking = { stopTracking() }
-                    )
-                }
+    private fun startTrackingWithPermission(onLocationUpdate: (Double, Double) -> Unit) {
+        val permission = Manifest.permission.ACCESS_FINE_LOCATION
+
+        if (ContextCompat.checkSelfPermission(this, permission) == PackageManager.PERMISSION_GRANTED) {
+            getLastKnownLocation(onLocationUpdate)
+            startTracking(onLocationUpdate)
+        } else {
+            onPermissionGranted = {
+                getLastKnownLocation(onLocationUpdate)
+                startTracking(onLocationUpdate)
             }
+            requestPermissionLauncher.launch(permission)
         }
     }
 
-    private fun startTrackingWithPermission(onLocationUpdate: (Double, Double) -> Unit) {
-        val permission = Manifest.permission.ACCESS_FINE_LOCATION
-        if (ContextCompat.checkSelfPermission(this, permission) == PackageManager.PERMISSION_GRANTED) {
-            startTracking(onLocationUpdate)
-        } else {
-            onPermissionGranted = { startTracking(onLocationUpdate) }
-            requestPermissionLauncher.launch(permission)
+    @SuppressLint("MissingPermission")
+    private fun getLastKnownLocation(onLocationReceived: (Double, Double) -> Unit) {
+        fusedLocationClient.lastLocation.addOnSuccessListener { location ->
+            if (location != null) {
+                onLocationReceived(location.latitude, location.longitude)
+            }
         }
     }
 
@@ -256,9 +307,17 @@ fun SmartTripApp(
     var tripName by remember { mutableStateOf("") }
     var tripId by remember { mutableStateOf("") }
     var showNameDialog by remember { mutableStateOf(false) }
+
+    var selectedHistoryTripId by remember { mutableStateOf("") }
+    var selectedHistoryTripName by remember { mutableStateOf("") }
+
     val gpsPoints = remember { mutableStateListOf<GpsPoint>() }
     val pois = remember { mutableStateListOf<PoiPoint>() }
+
     val context = LocalContext.current
+    val database = FirebaseDatabase.getInstance(
+        "https://smarttrip-50485-default-rtdb.europe-west1.firebasedatabase.app"
+    )
 
     if (showNameDialog) {
         TripNameDialog(
@@ -266,6 +325,10 @@ fun SmartTripApp(
             onConfirm = { name ->
                 tripName = name
                 tripId = "trip_${System.currentTimeMillis()}"
+
+                gpsPoints.clear()
+                pois.clear()
+
                 (context as MainActivity).saveTrip(tripId, name)
                 showNameDialog = false
                 currentScreen = "trip"
@@ -278,6 +341,7 @@ fun SmartTripApp(
             onCreateTripClick = { showNameDialog = true },
             onHistoryClick = { currentScreen = "history" }
         )
+
         "trip" -> TripScreen(
             tripName = tripName,
             tripId = tripId,
@@ -288,14 +352,60 @@ fun SmartTripApp(
             onStopTracking = onStopTracking,
             onViewMapClick = { currentScreen = "map" }
         )
+
         "map" -> MapScreen(
             tripName = tripName,
             gpsPoints = gpsPoints,
             pois = pois,
-            onBackClick = { currentScreen = "trip" }
+            onBackClick = {
+                currentScreen = if (selectedHistoryTripId.isNotBlank()) "trip_detail" else "trip"
+            }
         )
+
         "history" -> HistoryScreen(
-            onBackClick = { currentScreen = "home" }
+            onBackClick = { currentScreen = "home" },
+            onTripClick = { trip ->
+                selectedHistoryTripId = trip.id
+                selectedHistoryTripName = trip.name
+
+                gpsPoints.clear()
+                pois.clear()
+
+                database.getReference("trips/${trip.id}/gps_points")
+                    .get()
+                    .addOnSuccessListener { gpsSnapshot ->
+                        for (pointSnap in gpsSnapshot.children) {
+                            val lat = pointSnap.child("latitude").getValue(Double::class.java)
+                            val lon = pointSnap.child("longitude").getValue(Double::class.java)
+                            if (lat != null && lon != null) {
+                                gpsPoints.add(GpsPoint(lat, lon))
+                            }
+                        }
+
+                        database.getReference("trips/${trip.id}/pois")
+                            .get()
+                            .addOnSuccessListener { poiSnapshot ->
+                                for (poiSnap in poiSnapshot.children) {
+                                    val poi = poiSnap.getValue(PoiPoint::class.java)
+                                    if (poi != null) {
+                                        pois.add(poi)
+                                    }
+                                }
+
+                                tripName = trip.name
+                                tripId = trip.id
+                                currentScreen = "trip_detail"
+                            }
+                    }
+            }
+        )
+
+        "trip_detail" -> TripDetailScreen(
+            tripName = selectedHistoryTripName,
+            gpsPoints = gpsPoints,
+            pois = pois,
+            onBackClick = { currentScreen = "history" },
+            onViewMapClick = { currentScreen = "map" }
         )
     }
 }
@@ -315,22 +425,44 @@ fun HomeScreen(
         Box(
             modifier = Modifier
                 .size(90.dp)
-                .background(color = Color(0xFF1F3C88), shape = RoundedCornerShape(20.dp)),
+                .background(
+                    color = Color(0xFF1F3C88),
+                    shape = RoundedCornerShape(20.dp)
+                ),
             contentAlignment = Alignment.Center
         ) {
-            Text(text = "✈", fontSize = 36.sp, color = Color.White)
+            Text(
+                text = "✈",
+                fontSize = 36.sp,
+                color = Color.White
+            )
         }
 
         Spacer(modifier = Modifier.height(16.dp))
 
         Row {
-            Text(text = "Smart", fontSize = 38.sp, fontWeight = FontWeight.Bold, color = Color(0xFF1F3C88))
-            Text(text = "Trip", fontSize = 38.sp, fontWeight = FontWeight.Bold, color = Color(0xFFFF7043))
+            Text(
+                text = "Smart",
+                fontSize = 38.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color(0xFF1F3C88)
+            )
+            Text(
+                text = "Trip",
+                fontSize = 38.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color(0xFFFF7043)
+            )
         }
 
         Spacer(modifier = Modifier.height(8.dp))
 
-        Text(text = "Ton compagnon de voyage intelligent", fontSize = 15.sp, color = Color(0xFF5C7BB5), letterSpacing = 1.sp)
+        Text(
+            text = "Ton compagnon de voyage intelligent",
+            fontSize = 15.sp,
+            color = Color(0xFF5C7BB5),
+            letterSpacing = 1.sp
+        )
 
         Spacer(modifier = Modifier.height(32.dp))
 
@@ -344,18 +476,31 @@ fun HomeScreen(
                 modifier = Modifier.padding(24.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Text(text = "Bienvenue sur SmartTrip", fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
+                Text(
+                    text = "Bienvenue sur SmartTrip",
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+
                 Spacer(modifier = Modifier.height(12.dp))
-                Text(text = "Demarre ton aventure, suis ton trajet et immortalise chaque instant.", fontSize = 15.sp, color = Color.Gray)
+
+                Text(
+                    text = "Démarre ton aventure, suis ton trajet et immortalise chaque instant.",
+                    fontSize = 15.sp,
+                    color = Color.Gray
+                )
+
                 Spacer(modifier = Modifier.height(24.dp))
 
                 Button(
                     onClick = onCreateTripClick,
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(14.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1F3C88))
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFF1F3C88)
+                    )
                 ) {
-                    Text("Creer mon aventure")
+                    Text("Créer mon aventure")
                 }
 
                 Spacer(modifier = Modifier.height(12.dp))
@@ -381,29 +526,41 @@ fun TripNameDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Nom du voyage", fontWeight = FontWeight.Bold) },
+        title = {
+            Text("Nom du voyage", fontWeight = FontWeight.Bold)
+        },
         text = {
             Column {
-                Text(text = "Donne un nom a ton aventure !", fontSize = 14.sp, color = Color.Gray)
+                Text(
+                    text = "Donne un nom à ton aventure !",
+                    fontSize = 14.sp,
+                    color = Color.Gray
+                )
+
                 Spacer(modifier = Modifier.height(12.dp))
+
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },
-                    label = { Text("Ex: Vacances a Rome...") },
+                    label = { Text("Ex : Vacances à Rome...") },
                     modifier = Modifier.fillMaxWidth()
                 )
             }
         },
         confirmButton = {
             Button(
-                onClick = { if (name.isNotBlank()) onConfirm(name) },
+                onClick = {
+                    if (name.isNotBlank()) onConfirm(name)
+                },
                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1F3C88))
             ) {
                 Text("C'est parti !")
             }
         },
         dismissButton = {
-            OutlinedButton(onClick = onDismiss) { Text("Annuler") }
+            OutlinedButton(onClick = onDismiss) {
+                Text("Annuler")
+            }
         }
     )
 }
@@ -412,14 +569,14 @@ fun TripNameDialog(
 fun TripScreen(
     tripName: String,
     tripId: String,
-    gpsPoints: androidx.compose.runtime.snapshots.SnapshotStateList<GpsPoint>,
-    pois: androidx.compose.runtime.snapshots.SnapshotStateList<PoiPoint>,
+    gpsPoints: SnapshotStateList<GpsPoint>,
+    pois: SnapshotStateList<PoiPoint>,
     onBackClick: () -> Unit,
     onStartTracking: ((Double, Double) -> Unit) -> Unit,
     onStopTracking: () -> Unit,
     onViewMapClick: () -> Unit
 ) {
-    var tripStatus by remember { mutableStateOf("Voyage non demarre") }
+    var tripStatus by remember { mutableStateOf("Voyage non démarré") }
     var poiCount by remember { mutableStateOf(0) }
     var photoCount by remember { mutableStateOf(0) }
     var latitude by remember { mutableStateOf("Non disponible") }
@@ -428,11 +585,13 @@ fun TripScreen(
     var showPoiDialog by remember { mutableStateOf(false) }
     var startTime by remember { mutableStateOf(0L) }
     var elapsedTime by remember { mutableStateOf("00:00:00") }
+
     val context = LocalContext.current
 
     val batteryLevel = remember {
         val intent = (context as MainActivity).registerReceiver(
-            null, IntentFilter(Intent.ACTION_BATTERY_CHANGED)
+            null,
+            IntentFilter(Intent.ACTION_BATTERY_CHANGED)
         )
         val level = intent?.getIntExtra(BatteryManager.EXTRA_LEVEL, -1) ?: -1
         val scale = intent?.getIntExtra(BatteryManager.EXTRA_SCALE, -1) ?: -1
@@ -454,14 +613,21 @@ fun TripScreen(
         }
     }
 
+    LaunchedEffect(gpsPoints.size) {
+        if (gpsPoints.isNotEmpty()) {
+            val lastPoint = gpsPoints.last()
+            latitude = lastPoint.latitude.toString()
+            longitude = lastPoint.longitude.toString()
+        }
+        poiCount = pois.size
+    }
+
     if (showPoiDialog) {
         PoiDialog(
             currentLat = latitude,
             currentLon = longitude,
             onDismiss = { showPoiDialog = false },
             onConfirm = { name, type, address ->
-                poiCount++
-                tripStatus = "POI ajoute : $name"
                 val poi = PoiPoint(
                     name = name,
                     type = type,
@@ -470,8 +636,19 @@ fun TripScreen(
                     address = address,
                     timestamp = System.currentTimeMillis()
                 )
+
                 pois.add(poi)
-                (context as MainActivity).savePoi(tripId, name, type, latitude, longitude, address)
+                poiCount = pois.size
+                tripStatus = "POI ajouté : $name"
+
+                (context as MainActivity).savePoi(
+                    tripId,
+                    name,
+                    type,
+                    latitude,
+                    longitude,
+                    address
+                )
                 showPoiDialog = false
             }
         )
@@ -480,11 +657,24 @@ fun TripScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
+            .verticalScroll(rememberScrollState())
             .padding(20.dp)
     ) {
-        Text(text = tripName, fontSize = 28.sp, fontWeight = FontWeight.Bold, color = Color(0xFF1F3C88))
+        Text(
+            text = tripName,
+            fontSize = 28.sp,
+            fontWeight = FontWeight.Bold,
+            color = Color(0xFF1F3C88)
+        )
+
         Spacer(modifier = Modifier.height(8.dp))
-        Text(text = "Interface de collecte des donnees", fontSize = 16.sp, color = Color.Gray)
+
+        Text(
+            text = "Interface de collecte des données",
+            fontSize = 16.sp,
+            color = Color.Gray
+        )
+
         Spacer(modifier = Modifier.height(24.dp))
 
         Card(
@@ -494,21 +684,34 @@ fun TripScreen(
             elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
         ) {
             Column(modifier = Modifier.padding(20.dp)) {
-                Text(text = "Statut", fontWeight = FontWeight.SemiBold, fontSize = 18.sp)
+                Text(
+                    text = "Statut",
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 18.sp
+                )
+
                 Spacer(modifier = Modifier.height(8.dp))
-                Text(text = tripStatus, fontSize = 16.sp, color = Color(0xFF333333))
+
+                Text(
+                    text = tripStatus,
+                    fontSize = 16.sp,
+                    color = Color(0xFF333333)
+                )
+
                 Spacer(modifier = Modifier.height(12.dp))
-                Text(text = "Latitude : $latitude", fontSize = 15.sp, color = Color(0xFF444444))
+
+                Text("Latitude : $latitude", fontSize = 15.sp, color = Color(0xFF444444))
                 Spacer(modifier = Modifier.height(6.dp))
-                Text(text = "Longitude : $longitude", fontSize = 15.sp, color = Color(0xFF444444))
+                Text("Longitude : $longitude", fontSize = 15.sp, color = Color(0xFF444444))
                 Spacer(modifier = Modifier.height(6.dp))
-                Text(text = "Points GPS collectes : ${gpsPoints.size}", fontSize = 15.sp, color = Color(0xFF444444))
+                Text("Points GPS collectés : ${gpsPoints.size}", fontSize = 15.sp, color = Color(0xFF444444))
                 Spacer(modifier = Modifier.height(6.dp))
+
                 Text(
                     text = "Batterie : $batteryLevel% " + when {
                         batteryLevel > 50 -> "(GPS toutes les 5s)"
                         batteryLevel > 20 -> "(GPS toutes les 15s)"
-                        else -> "(GPS toutes les 30s - economie)"
+                        else -> "(GPS toutes les 30s - économie)"
                     },
                     fontSize = 15.sp,
                     color = when {
@@ -530,7 +733,8 @@ fun TripScreen(
                 onClick = {
                     if (!isTracking) {
                         isTracking = true
-                        tripStatus = "Suivi GPS demarre"
+                        tripStatus = "Suivi GPS démarré"
+
                         onStartTracking { lat, lon ->
                             latitude = lat.toString()
                             longitude = lon.toString()
@@ -549,7 +753,7 @@ fun TripScreen(
             Button(
                 onClick = {
                     isTracking = false
-                    tripStatus = "Suivi GPS arrete"
+                    tripStatus = "Suivi GPS arrêté"
                     onStopTracking()
                 },
                 modifier = Modifier.weight(1f),
@@ -569,11 +773,22 @@ fun TripScreen(
             elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
         ) {
             Column(modifier = Modifier.padding(20.dp)) {
-                Text(text = "Actions", fontWeight = FontWeight.SemiBold, fontSize = 18.sp)
+                Text(
+                    text = "Actions",
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 18.sp
+                )
+
                 Spacer(modifier = Modifier.height(16.dp))
 
                 Button(
-                    onClick = { showPoiDialog = true },
+                    onClick = {
+                        if (gpsPoints.isEmpty()) {
+                            tripStatus = "Attends le signal GPS avant d'ajouter un POI"
+                        } else {
+                            showPoiDialog = true
+                        }
+                    },
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(14.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1565C0))
@@ -587,7 +802,7 @@ fun TripScreen(
                     onClick = {
                         (context as MainActivity).launchCamera { uri ->
                             photoCount++
-                            tripStatus = "Photo ajoutee"
+                            tripStatus = "Photo ajoutée"
                             (context as MainActivity).savePhoto(tripId, uri, latitude, longitude)
                         }
                     },
@@ -620,23 +835,31 @@ fun TripScreen(
             elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
         ) {
             Column(modifier = Modifier.padding(20.dp)) {
-                Text(text = "Statistiques", fontWeight = FontWeight.SemiBold, fontSize = 18.sp)
+                Text(
+                    text = "Statistiques",
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 18.sp
+                )
+
                 Spacer(modifier = Modifier.height(12.dp))
-                Text(text = "Nombre de POI : $poiCount", fontSize = 16.sp)
+                Text("Nombre de POI : $poiCount", fontSize = 16.sp)
                 Spacer(modifier = Modifier.height(6.dp))
-                Text(text = "Nombre de photos : $photoCount", fontSize = 16.sp)
+                Text("Nombre de photos : $photoCount", fontSize = 16.sp)
                 Spacer(modifier = Modifier.height(6.dp))
-                Text(text = "Points GPS : ${gpsPoints.size}", fontSize = 16.sp)
+                Text("Points GPS : ${gpsPoints.size}", fontSize = 16.sp)
                 Spacer(modifier = Modifier.height(6.dp))
+
                 Text(
                     text = "Distance : ${"%.2f".format((context as MainActivity).calculateDistance(gpsPoints))} km",
                     fontSize = 16.sp,
                     color = Color(0xFF1F3C88),
                     fontWeight = FontWeight.SemiBold
                 )
+
                 Spacer(modifier = Modifier.height(6.dp))
+
                 Text(
-                    text = "Duree : $elapsedTime",
+                    text = "Durée : $elapsedTime",
                     fontSize = 16.sp,
                     color = Color(0xFF1F3C88),
                     fontWeight = FontWeight.SemiBold
@@ -651,8 +874,10 @@ fun TripScreen(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(14.dp)
         ) {
-            Text("Retour a l'accueil")
+            Text("Retour à l'accueil")
         }
+
+        Spacer(modifier = Modifier.height(20.dp))
     }
 }
 
@@ -666,22 +891,26 @@ fun PoiDialog(
     var poiName by remember { mutableStateOf("") }
     var selectedType by remember { mutableStateOf("Restaurant") }
     var address by remember { mutableStateOf("Chargement...") }
+
     val context = LocalContext.current
-    val types = listOf("Restaurant", "Musee", "Hotel", "Monument", "Plage", "Autre")
+    val types = listOf("Restaurant", "Musée", "Hôtel", "Monument", "Plage", "Autre")
 
     LaunchedEffect(currentLat, currentLon) {
         val lat = currentLat.toDoubleOrNull()
         val lon = currentLon.toDoubleOrNull()
-        if (lat != null && lon != null) {
-            address = (context as MainActivity).getAddressFromLocation(lat, lon)
+
+        address = if (lat != null && lon != null) {
+            (context as MainActivity).getAddressFromLocation(lat, lon)
         } else {
-            address = "Position non disponible"
+            "Position non disponible"
         }
     }
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Ajouter un point d'interet", fontWeight = FontWeight.Bold) },
+        title = {
+            Text("Ajouter un point d'intérêt", fontWeight = FontWeight.Bold)
+        },
         text = {
             Column {
                 Text("Position actuelle :", fontWeight = FontWeight.SemiBold)
@@ -730,7 +959,9 @@ fun PoiDialog(
             }
         },
         dismissButton = {
-            OutlinedButton(onClick = onDismiss) { Text("Annuler") }
+            OutlinedButton(onClick = onDismiss) {
+                Text("Annuler")
+            }
         }
     )
 }
