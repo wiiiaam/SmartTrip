@@ -75,14 +75,26 @@ class MainActivity : ComponentActivity() {
         }
 
     fun getBatteryLevel(): Int {
-        val batteryIntent = registerReceiver(
-            null,
-            IntentFilter(Intent.ACTION_BATTERY_CHANGED)
-        )
+        val batteryIntent = registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
         val level = batteryIntent?.getIntExtra(BatteryManager.EXTRA_LEVEL, -1) ?: -1
         val scale = batteryIntent?.getIntExtra(BatteryManager.EXTRA_SCALE, -1) ?: -1
         return if (level == -1 || scale == -1) 50
         else (level.toFloat() / scale.toFloat() * 100).toInt()
+    }
+
+    fun calculateDistance(points: List<GpsPoint>): Double {
+        if (points.size < 2) return 0.0
+        var totalDistance = 0.0
+        for (i in 0 until points.size - 1) {
+            val results = FloatArray(1)
+            android.location.Location.distanceBetween(
+                points[i].latitude, points[i].longitude,
+                points[i + 1].latitude, points[i + 1].longitude,
+                results
+            )
+            totalDistance += results[0]
+        }
+        return totalDistance / 1000.0
     }
 
     fun launchCamera(onResult: (Uri) -> Unit) {
@@ -112,9 +124,7 @@ class MainActivity : ComponentActivity() {
                     if (address.locality != null) append(address.locality + ", ")
                     if (address.countryName != null) append(address.countryName)
                 }
-            } else {
-                "Adresse inconnue"
-            }
+            } else "Adresse inconnue"
         } catch (e: Exception) {
             "Adresse inconnue"
         }
@@ -202,7 +212,6 @@ class MainActivity : ComponentActivity() {
     @SuppressLint("MissingPermission")
     private fun startTracking(onLocationUpdate: (Double, Double) -> Unit) {
         val batteryLevel = getBatteryLevel()
-
         val interval = when {
             batteryLevel > 50 -> 5000L
             batteryLevel > 20 -> 15000L
@@ -306,10 +315,7 @@ fun HomeScreen(
         Box(
             modifier = Modifier
                 .size(90.dp)
-                .background(
-                    color = Color(0xFF1F3C88),
-                    shape = RoundedCornerShape(20.dp)
-                ),
+                .background(color = Color(0xFF1F3C88), shape = RoundedCornerShape(20.dp)),
             contentAlignment = Alignment.Center
         ) {
             Text(text = "✈", fontSize = 36.sp, color = Color.White)
@@ -420,17 +426,32 @@ fun TripScreen(
     var longitude by remember { mutableStateOf("Non disponible") }
     var isTracking by remember { mutableStateOf(false) }
     var showPoiDialog by remember { mutableStateOf(false) }
+    var startTime by remember { mutableStateOf(0L) }
+    var elapsedTime by remember { mutableStateOf("00:00:00") }
     val context = LocalContext.current
 
     val batteryLevel = remember {
         val intent = (context as MainActivity).registerReceiver(
-            null,
-            IntentFilter(Intent.ACTION_BATTERY_CHANGED)
+            null, IntentFilter(Intent.ACTION_BATTERY_CHANGED)
         )
         val level = intent?.getIntExtra(BatteryManager.EXTRA_LEVEL, -1) ?: -1
         val scale = intent?.getIntExtra(BatteryManager.EXTRA_SCALE, -1) ?: -1
         if (level == -1 || scale == -1) 50
         else (level.toFloat() / scale.toFloat() * 100).toInt()
+    }
+
+    LaunchedEffect(isTracking) {
+        if (isTracking) {
+            startTime = System.currentTimeMillis()
+            while (isTracking) {
+                val elapsed = System.currentTimeMillis() - startTime
+                val hours = elapsed / 3600000
+                val minutes = (elapsed % 3600000) / 60000
+                val seconds = (elapsed % 60000) / 1000
+                elapsedTime = String.format("%02d:%02d:%02d", hours, minutes, seconds)
+                kotlinx.coroutines.delay(1000)
+            }
+        }
     }
 
     if (showPoiDialog) {
@@ -599,13 +620,27 @@ fun TripScreen(
             elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
         ) {
             Column(modifier = Modifier.padding(20.dp)) {
-                Text(text = "Resume temporaire", fontWeight = FontWeight.SemiBold, fontSize = 18.sp)
+                Text(text = "Statistiques", fontWeight = FontWeight.SemiBold, fontSize = 18.sp)
                 Spacer(modifier = Modifier.height(12.dp))
                 Text(text = "Nombre de POI : $poiCount", fontSize = 16.sp)
                 Spacer(modifier = Modifier.height(6.dp))
                 Text(text = "Nombre de photos : $photoCount", fontSize = 16.sp)
                 Spacer(modifier = Modifier.height(6.dp))
-                Text(text = "Nombre de points GPS : ${gpsPoints.size}", fontSize = 16.sp)
+                Text(text = "Points GPS : ${gpsPoints.size}", fontSize = 16.sp)
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(
+                    text = "Distance : ${"%.2f".format((context as MainActivity).calculateDistance(gpsPoints))} km",
+                    fontSize = 16.sp,
+                    color = Color(0xFF1F3C88),
+                    fontWeight = FontWeight.SemiBold
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(
+                    text = "Duree : $elapsedTime",
+                    fontSize = 16.sp,
+                    color = Color(0xFF1F3C88),
+                    fontWeight = FontWeight.SemiBold
+                )
             }
         }
 
