@@ -2,18 +2,30 @@ package com.example.smarttrip
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.google.android.gms.maps.CameraUpdateFactory
 import com.google.android.gms.maps.model.BitmapDescriptorFactory
-import com.google.android.gms.maps.model.CameraPosition
 import com.google.android.gms.maps.model.LatLng
-import com.google.maps.android.compose.*
+import com.google.android.gms.maps.model.LatLngBounds
+import com.google.maps.android.compose.GoogleMap
+import com.google.maps.android.compose.Marker
+import com.google.maps.android.compose.MarkerState
+import com.google.maps.android.compose.Polyline
+import com.google.maps.android.compose.rememberCameraPositionState
 
 @Composable
 fun MapScreen(
@@ -23,42 +35,94 @@ fun MapScreen(
     onBackClick: () -> Unit
 ) {
     val defaultLocation = LatLng(48.8566, 2.3522)
-    val firstPoint = if (gpsPoints.isNotEmpty()) {
-        LatLng(gpsPoints.first().latitude, gpsPoints.first().longitude)
-    } else {
-        defaultLocation
-    }
+    val cameraPositionState = rememberCameraPositionState()
 
-    val cameraPositionState = rememberCameraPositionState {
-        position = CameraPosition.fromLatLngZoom(firstPoint, 13f)
+    LaunchedEffect(gpsPoints, pois) {
+        if (gpsPoints.isNotEmpty()) {
+            if (gpsPoints.size == 1) {
+                val onlyPoint = LatLng(gpsPoints.first().latitude, gpsPoints.first().longitude)
+                cameraPositionState.animate(
+                    CameraUpdateFactory.newLatLngZoom(onlyPoint, 15f)
+                )
+            } else {
+                val boundsBuilder = LatLngBounds.Builder()
+                gpsPoints.forEach { point ->
+                    boundsBuilder.include(LatLng(point.latitude, point.longitude))
+                }
+                pois.forEach { poi ->
+                    val lat = poi.latitude.toDoubleOrNull()
+                    val lon = poi.longitude.toDoubleOrNull()
+                    if (lat != null && lon != null) {
+                        boundsBuilder.include(LatLng(lat, lon))
+                    }
+                }
+
+                val bounds = boundsBuilder.build()
+                cameraPositionState.animate(
+                    CameraUpdateFactory.newLatLngBounds(bounds, 120)
+                )
+            }
+        } else if (pois.isNotEmpty()) {
+            val firstPoi = pois.first()
+            val lat = firstPoi.latitude.toDoubleOrNull()
+            val lon = firstPoi.longitude.toDoubleOrNull()
+
+            if (lat != null && lon != null) {
+                cameraPositionState.animate(
+                    CameraUpdateFactory.newLatLngZoom(LatLng(lat, lon), 15f)
+                )
+            } else {
+                cameraPositionState.animate(
+                    CameraUpdateFactory.newLatLngZoom(defaultLocation, 12f)
+                )
+            }
+        } else {
+            cameraPositionState.animate(
+                CameraUpdateFactory.newLatLngZoom(defaultLocation, 12f)
+            )
+        }
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
-        Row(
+        Card(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
+                .padding(12.dp),
+            shape = RoundedCornerShape(18.dp),
+            colors = CardDefaults.cardColors(containerColor = Color.White),
+            elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
         ) {
-            Column {
-                Text(
-                    text = tripName,
-                    fontSize = 22.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color(0xFF1F3C88)
-                )
-                Text(
-                    text = "${gpsPoints.size} points GPS · ${pois.size} POIs",
-                    fontSize = 14.sp,
-                    color = Color.Gray
-                )
-            }
-            OutlinedButton(
-                onClick = onBackClick,
-                shape = RoundedCornerShape(12.dp)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                Text("Retour")
+                Column {
+                    Text(
+                        text = tripName,
+                        fontSize = 22.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF1F3C88)
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "${gpsPoints.size} points GPS · ${pois.size} POIs",
+                        fontSize = 14.sp,
+                        color = Color.Gray
+                    )
+                }
+
+                OutlinedButton(
+                    onClick = onBackClick,
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        contentColor = Color(0xFF1F3C88)
+                    )
+                ) {
+                    Text("Retour")
+                }
             }
         }
 
@@ -66,16 +130,16 @@ fun MapScreen(
             modifier = Modifier.fillMaxSize(),
             cameraPositionState = cameraPositionState
         ) {
-            // Trajet GPS
+            // Ligne du trajet
             if (gpsPoints.size >= 2) {
                 Polyline(
                     points = gpsPoints.map { LatLng(it.latitude, it.longitude) },
                     color = Color(0xFF1F3C88),
-                    width = 8f
+                    width = 10f
                 )
             }
 
-            // Marqueur départ
+            // Point de départ
             if (gpsPoints.isNotEmpty()) {
                 Marker(
                     state = MarkerState(
@@ -84,10 +148,14 @@ fun MapScreen(
                             gpsPoints.first().longitude
                         )
                     ),
-                    title = "Depart",
+                    title = "Départ",
+                    snippet = "Début du voyage",
                     icon = BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_GREEN)
                 )
-                // Marqueur position actuelle
+            }
+
+            // Point actuel / dernier point
+            if (gpsPoints.isNotEmpty()) {
                 Marker(
                     state = MarkerState(
                         position = LatLng(
@@ -96,23 +164,23 @@ fun MapScreen(
                         )
                     ),
                     title = "Position actuelle",
-                    icon = BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_BLUE)
+                    snippet = "Dernier point GPS",
+                    icon = BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_AZURE)
                 )
             }
 
-            // Marqueurs POIs
+            // POIs
             pois.forEach { poi ->
-                if (poi.latitude.isNotEmpty() && poi.longitude.isNotEmpty()) {
-                    val lat = poi.latitude.toDoubleOrNull()
-                    val lon = poi.longitude.toDoubleOrNull()
-                    if (lat != null && lon != null) {
-                        Marker(
-                            state = MarkerState(position = LatLng(lat, lon)),
-                            title = poi.name,
-                            snippet = poi.type,
-                            icon = BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_ORANGE)
-                        )
-                    }
+                val lat = poi.latitude.toDoubleOrNull()
+                val lon = poi.longitude.toDoubleOrNull()
+
+                if (lat != null && lon != null) {
+                    Marker(
+                        state = MarkerState(position = LatLng(lat, lon)),
+                        title = poi.name,
+                        snippet = "${poi.type} • ${poi.address}",
+                        icon = BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_ORANGE)
+                    )
                 }
             }
         }

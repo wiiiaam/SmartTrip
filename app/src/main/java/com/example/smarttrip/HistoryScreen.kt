@@ -27,7 +27,10 @@ data class TripSummary(
 )
 
 @Composable
-fun HistoryScreen(onBackClick: () -> Unit) {
+fun HistoryScreen(
+    onBackClick: () -> Unit,
+    onTripClick: (TripSummary) -> Unit
+) {
     val database = FirebaseDatabase.getInstance("https://smarttrip-50485-default-rtdb.europe-west1.firebasedatabase.app")
     var trips by remember { mutableStateOf<List<TripSummary>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
@@ -48,6 +51,7 @@ fun HistoryScreen(onBackClick: () -> Unit) {
                 trips = list.sortedByDescending { it.createdAt }
                 isLoading = false
             }
+
             override fun onCancelled(error: DatabaseError) {
                 isLoading = false
             }
@@ -108,7 +112,7 @@ fun HistoryScreen(onBackClick: () -> Unit) {
                 contentAlignment = Alignment.Center
             ) {
                 Text(
-                    text = "Aucun voyage enregistre",
+                    text = "Aucun voyage enregistré",
                     fontSize = 16.sp,
                     color = Color.Gray
                 )
@@ -117,7 +121,9 @@ fun HistoryScreen(onBackClick: () -> Unit) {
             LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 items(trips) { trip ->
                     Card(
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onTripClick(trip) },
                         shape = RoundedCornerShape(16.dp),
                         colors = CardDefaults.cardColors(containerColor = Color.White),
                         elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
