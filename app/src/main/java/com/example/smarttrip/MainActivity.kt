@@ -2,9 +2,12 @@ package com.example.smarttrip
 
 import android.Manifest
 import android.annotation.SuppressLint
+import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.location.Geocoder
 import android.net.Uri
+import android.os.BatteryManager
 import android.os.Bundle
 import android.os.Looper
 import androidx.activity.ComponentActivity
@@ -70,6 +73,17 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+
+    fun getBatteryLevel(): Int {
+        val batteryIntent = registerReceiver(
+            null,
+            IntentFilter(Intent.ACTION_BATTERY_CHANGED)
+        )
+        val level = batteryIntent?.getIntExtra(BatteryManager.EXTRA_LEVEL, -1) ?: -1
+        val scale = batteryIntent?.getIntExtra(BatteryManager.EXTRA_SCALE, -1) ?: -1
+        return if (level == -1 || scale == -1) 50
+        else (level.toFloat() / scale.toFloat() * 100).toInt()
+    }
 
     fun launchCamera(onResult: (Uri) -> Unit) {
         onPhotoTaken = onResult
@@ -157,9 +171,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
         fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
-
         setContent {
             MaterialTheme {
                 Surface(
@@ -170,9 +182,7 @@ class MainActivity : ComponentActivity() {
                         onStartTracking = { onLocationUpdate ->
                             startTrackingWithPermission(onLocationUpdate)
                         },
-                        onStopTracking = {
-                            stopTracking()
-                        }
+                        onStopTracking = { stopTracking() }
                     )
                 }
             }
@@ -191,11 +201,19 @@ class MainActivity : ComponentActivity() {
 
     @SuppressLint("MissingPermission")
     private fun startTracking(onLocationUpdate: (Double, Double) -> Unit) {
+        val batteryLevel = getBatteryLevel()
+
+        val interval = when {
+            batteryLevel > 50 -> 5000L
+            batteryLevel > 20 -> 15000L
+            else -> 30000L
+        }
+
         val locationRequest = LocationRequest.Builder(
             Priority.PRIORITY_HIGH_ACCURACY,
-            5000L
+            interval
         ).apply {
-            setMinUpdateIntervalMillis(3000L)
+            setMinUpdateIntervalMillis(interval)
         }.build()
 
         locationCallback = object : LocationCallback() {
@@ -294,38 +312,19 @@ fun HomeScreen(
                 ),
             contentAlignment = Alignment.Center
         ) {
-            Text(
-                text = "✈",
-                fontSize = 36.sp,
-                color = Color.White
-            )
+            Text(text = "✈", fontSize = 36.sp, color = Color.White)
         }
 
         Spacer(modifier = Modifier.height(16.dp))
 
         Row {
-            Text(
-                text = "Smart",
-                fontSize = 38.sp,
-                fontWeight = FontWeight.Bold,
-                color = Color(0xFF1F3C88)
-            )
-            Text(
-                text = "Trip",
-                fontSize = 38.sp,
-                fontWeight = FontWeight.Bold,
-                color = Color(0xFFFF7043)
-            )
+            Text(text = "Smart", fontSize = 38.sp, fontWeight = FontWeight.Bold, color = Color(0xFF1F3C88))
+            Text(text = "Trip", fontSize = 38.sp, fontWeight = FontWeight.Bold, color = Color(0xFFFF7043))
         }
 
         Spacer(modifier = Modifier.height(8.dp))
 
-        Text(
-            text = "Ton compagnon de voyage intelligent",
-            fontSize = 15.sp,
-            color = Color(0xFF5C7BB5),
-            letterSpacing = 1.sp
-        )
+        Text(text = "Ton compagnon de voyage intelligent", fontSize = 15.sp, color = Color(0xFF5C7BB5), letterSpacing = 1.sp)
 
         Spacer(modifier = Modifier.height(32.dp))
 
@@ -339,29 +338,16 @@ fun HomeScreen(
                 modifier = Modifier.padding(24.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Text(
-                    text = "Bienvenue sur SmartTrip",
-                    fontSize = 20.sp,
-                    fontWeight = FontWeight.SemiBold
-                )
-
+                Text(text = "Bienvenue sur SmartTrip", fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
                 Spacer(modifier = Modifier.height(12.dp))
-
-                Text(
-                    text = "Demarre ton aventure, suis ton trajet et immortalise chaque instant.",
-                    fontSize = 15.sp,
-                    color = Color.Gray
-                )
-
+                Text(text = "Demarre ton aventure, suis ton trajet et immortalise chaque instant.", fontSize = 15.sp, color = Color.Gray)
                 Spacer(modifier = Modifier.height(24.dp))
 
                 Button(
                     onClick = onCreateTripClick,
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(14.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = Color(0xFF1F3C88)
-                    )
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1F3C88))
                 ) {
                     Text("Creer mon aventure")
                 }
@@ -392,11 +378,7 @@ fun TripNameDialog(
         title = { Text("Nom du voyage", fontWeight = FontWeight.Bold) },
         text = {
             Column {
-                Text(
-                    text = "Donne un nom a ton aventure !",
-                    fontSize = 14.sp,
-                    color = Color.Gray
-                )
+                Text(text = "Donne un nom a ton aventure !", fontSize = 14.sp, color = Color.Gray)
                 Spacer(modifier = Modifier.height(12.dp))
                 OutlinedTextField(
                     value = name,
@@ -408,18 +390,14 @@ fun TripNameDialog(
         },
         confirmButton = {
             Button(
-                onClick = {
-                    if (name.isNotBlank()) onConfirm(name)
-                },
+                onClick = { if (name.isNotBlank()) onConfirm(name) },
                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1F3C88))
             ) {
                 Text("C'est parti !")
             }
         },
         dismissButton = {
-            OutlinedButton(onClick = onDismiss) {
-                Text("Annuler")
-            }
+            OutlinedButton(onClick = onDismiss) { Text("Annuler") }
         }
     )
 }
@@ -443,6 +421,17 @@ fun TripScreen(
     var isTracking by remember { mutableStateOf(false) }
     var showPoiDialog by remember { mutableStateOf(false) }
     val context = LocalContext.current
+
+    val batteryLevel = remember {
+        val intent = (context as MainActivity).registerReceiver(
+            null,
+            IntentFilter(Intent.ACTION_BATTERY_CHANGED)
+        )
+        val level = intent?.getIntExtra(BatteryManager.EXTRA_LEVEL, -1) ?: -1
+        val scale = intent?.getIntExtra(BatteryManager.EXTRA_SCALE, -1) ?: -1
+        if (level == -1 || scale == -1) 50
+        else (level.toFloat() / scale.toFloat() * 100).toInt()
+    }
 
     if (showPoiDialog) {
         PoiDialog(
@@ -472,21 +461,9 @@ fun TripScreen(
             .fillMaxSize()
             .padding(20.dp)
     ) {
-        Text(
-            text = tripName,
-            fontSize = 28.sp,
-            fontWeight = FontWeight.Bold,
-            color = Color(0xFF1F3C88)
-        )
-
+        Text(text = tripName, fontSize = 28.sp, fontWeight = FontWeight.Bold, color = Color(0xFF1F3C88))
         Spacer(modifier = Modifier.height(8.dp))
-
-        Text(
-            text = "Interface de collecte des donnees",
-            fontSize = 16.sp,
-            color = Color.Gray
-        )
-
+        Text(text = "Interface de collecte des donnees", fontSize = 16.sp, color = Color.Gray)
         Spacer(modifier = Modifier.height(24.dp))
 
         Card(
@@ -505,6 +482,20 @@ fun TripScreen(
                 Text(text = "Longitude : $longitude", fontSize = 15.sp, color = Color(0xFF444444))
                 Spacer(modifier = Modifier.height(6.dp))
                 Text(text = "Points GPS collectes : ${gpsPoints.size}", fontSize = 15.sp, color = Color(0xFF444444))
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(
+                    text = "Batterie : $batteryLevel% " + when {
+                        batteryLevel > 50 -> "(GPS toutes les 5s)"
+                        batteryLevel > 20 -> "(GPS toutes les 15s)"
+                        else -> "(GPS toutes les 30s - economie)"
+                    },
+                    fontSize = 15.sp,
+                    color = when {
+                        batteryLevel > 50 -> Color(0xFF2E7D32)
+                        batteryLevel > 20 -> Color(0xFFFF8F00)
+                        else -> Color(0xFFC62828)
+                    }
+                )
             }
         }
 
@@ -704,9 +695,7 @@ fun PoiDialog(
             }
         },
         dismissButton = {
-            OutlinedButton(onClick = onDismiss) {
-                Text("Annuler")
-            }
+            OutlinedButton(onClick = onDismiss) { Text("Annuler") }
         }
     )
 }
