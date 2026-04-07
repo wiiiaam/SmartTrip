@@ -10,6 +10,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.google.android.gms.maps.model.BitmapDescriptorFactory
 import com.google.android.gms.maps.model.CameraPosition
 import com.google.android.gms.maps.model.LatLng
 import com.google.maps.android.compose.*
@@ -18,6 +19,7 @@ import com.google.maps.android.compose.*
 fun MapScreen(
     tripName: String,
     gpsPoints: List<GpsPoint>,
+    pois: List<PoiPoint>,
     onBackClick: () -> Unit
 ) {
     val defaultLocation = LatLng(48.8566, 2.3522)
@@ -47,7 +49,7 @@ fun MapScreen(
                     color = Color(0xFF1F3C88)
                 )
                 Text(
-                    text = "${gpsPoints.size} points GPS",
+                    text = "${gpsPoints.size} points GPS · ${pois.size} POIs",
                     fontSize = 14.sp,
                     color = Color.Gray
                 )
@@ -64,6 +66,7 @@ fun MapScreen(
             modifier = Modifier.fillMaxSize(),
             cameraPositionState = cameraPositionState
         ) {
+            // Trajet GPS
             if (gpsPoints.size >= 2) {
                 Polyline(
                     points = gpsPoints.map { LatLng(it.latitude, it.longitude) },
@@ -71,6 +74,8 @@ fun MapScreen(
                     width = 8f
                 )
             }
+
+            // Marqueur départ
             if (gpsPoints.isNotEmpty()) {
                 Marker(
                     state = MarkerState(
@@ -79,8 +84,10 @@ fun MapScreen(
                             gpsPoints.first().longitude
                         )
                     ),
-                    title = "Départ"
+                    title = "Depart",
+                    icon = BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_GREEN)
                 )
+                // Marqueur position actuelle
                 Marker(
                     state = MarkerState(
                         position = LatLng(
@@ -88,8 +95,25 @@ fun MapScreen(
                             gpsPoints.last().longitude
                         )
                     ),
-                    title = "Position actuelle"
+                    title = "Position actuelle",
+                    icon = BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_BLUE)
                 )
+            }
+
+            // Marqueurs POIs
+            pois.forEach { poi ->
+                if (poi.latitude.isNotEmpty() && poi.longitude.isNotEmpty()) {
+                    val lat = poi.latitude.toDoubleOrNull()
+                    val lon = poi.longitude.toDoubleOrNull()
+                    if (lat != null && lon != null) {
+                        Marker(
+                            state = MarkerState(position = LatLng(lat, lon)),
+                            title = poi.name,
+                            snippet = poi.type,
+                            icon = BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_ORANGE)
+                        )
+                    }
+                }
             }
         }
     }

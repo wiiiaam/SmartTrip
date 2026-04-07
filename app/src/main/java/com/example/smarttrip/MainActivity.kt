@@ -3,6 +3,7 @@ package com.example.smarttrip
 import android.Manifest
 import android.annotation.SuppressLint
 import android.content.pm.PackageManager
+import android.location.Geocoder
 import android.net.Uri
 import android.os.Bundle
 import android.os.Looper
@@ -27,6 +28,7 @@ import com.google.android.gms.location.*
 import com.google.firebase.database.FirebaseDatabase
 import com.google.firebase.storage.FirebaseStorage
 import java.io.File
+import java.util.Locale
 
 data class GpsPoint(
     val latitude: Double,
@@ -38,6 +40,7 @@ data class PoiPoint(
     val type: String = "",
     val latitude: String = "",
     val longitude: String = "",
+    val address: String = "",
     val timestamp: Long = 0
 )
 
@@ -84,6 +87,25 @@ class MainActivity : ComponentActivity() {
         takePictureLauncher.launch(uri)
     }
 
+    fun getAddressFromLocation(lat: Double, lon: Double): String {
+        return try {
+            val geocoder = Geocoder(this, Locale.getDefault())
+            val addresses = geocoder.getFromLocation(lat, lon, 1)
+            if (!addresses.isNullOrEmpty()) {
+                val address = addresses[0]
+                buildString {
+                    if (address.thoroughfare != null) append(address.thoroughfare + ", ")
+                    if (address.locality != null) append(address.locality + ", ")
+                    if (address.countryName != null) append(address.countryName)
+                }
+            } else {
+                "Adresse inconnue"
+            }
+        } catch (e: Exception) {
+            "Adresse inconnue"
+        }
+    }
+
     fun saveGpsPoint(tripId: String, lat: Double, lon: Double) {
         val ref = database.getReference("trips/$tripId/gps_points")
         val point = mapOf(
@@ -94,13 +116,14 @@ class MainActivity : ComponentActivity() {
         ref.push().setValue(point)
     }
 
-    fun savePoi(tripId: String, name: String, type: String, lat: String, lon: String) {
+    fun savePoi(tripId: String, name: String, type: String, lat: String, lon: String, address: String) {
         val ref = database.getReference("trips/$tripId/pois")
         val poi = PoiPoint(
             name = name,
             type = type,
             latitude = lat,
             longitude = lon,
+            address = address,
             timestamp = System.currentTimeMillis()
         )
         ref.push().setValue(poi)
@@ -118,7 +141,7 @@ class MainActivity : ComponentActivity() {
     fun savePhoto(tripId: String, uri: Uri, lat: String, lon: String) {
         val storageRef = storage.reference
             .child("trips/$tripId/photos/${System.currentTimeMillis()}.jpg")
-        storageRef.putFile(uri).addOnSuccessListener { taskSnapshot ->
+        storageRef.putFile(uri).addOnSuccessListener {
             storageRef.downloadUrl.addOnSuccessListener { downloadUri ->
                 val ref = database.getReference("trips/$tripId/photos")
                 val photo = mapOf(
@@ -207,6 +230,7 @@ fun SmartTripApp(
     var tripId by remember { mutableStateOf("") }
     var showNameDialog by remember { mutableStateOf(false) }
     val gpsPoints = remember { mutableStateListOf<GpsPoint>() }
+    val pois = remember { mutableStateListOf<PoiPoint>() }
     val context = LocalContext.current
 
     if (showNameDialog) {
@@ -230,6 +254,7 @@ fun SmartTripApp(
             tripName = tripName,
             tripId = tripId,
             gpsPoints = gpsPoints,
+            pois = pois,
             onBackClick = { currentScreen = "home" },
             onStartTracking = onStartTracking,
             onStopTracking = onStopTracking,
@@ -238,6 +263,7 @@ fun SmartTripApp(
         "map" -> MapScreen(
             tripName = tripName,
             gpsPoints = gpsPoints,
+            pois = pois,
             onBackClick = { currentScreen = "trip" }
         )
     }
@@ -315,7 +341,7 @@ fun HomeScreen(onCreateTripClick: () -> Unit) {
                 Spacer(modifier = Modifier.height(12.dp))
 
                 Text(
-                    text = "Démarre ton aventure, suis ton trajet et immortalise chaque instant.",
+                    text = "Demarre ton aventure, suis ton trajet et immortalise chaque instant.",
                     fontSize = 15.sp,
                     color = Color.Gray
                 )
@@ -329,7 +355,7 @@ fun HomeScreen(onCreateTripClick: () -> Unit) {
                         containerColor = Color(0xFF1F3C88)
                     )
                 ) {
-                    Text("Créer mon aventure")
+                    Text("Creer mon aventure")
                 }
             }
         }
@@ -349,7 +375,7 @@ fun TripNameDialog(
         text = {
             Column {
                 Text(
-                    text = "Donne un nom à ton aventure !",
+                    text = "Donne un nom a ton aventure !",
                     fontSize = 14.sp,
                     color = Color.Gray
                 )
@@ -385,6 +411,7 @@ fun TripScreen(
     tripName: String,
     tripId: String,
     gpsPoints: androidx.compose.runtime.snapshots.SnapshotStateList<GpsPoint>,
+    pois: androidx.compose.runtime.snapshots.SnapshotStateList<PoiPoint>,
     onBackClick: () -> Unit,
     onStartTracking: ((Double, Double) -> Unit) -> Unit,
     onStopTracking: () -> Unit,
@@ -404,10 +431,19 @@ fun TripScreen(
             currentLat = latitude,
             currentLon = longitude,
             onDismiss = { showPoiDialog = false },
-            onConfirm = { name, type ->
+            onConfirm = { name, type, address ->
                 poiCount++
                 tripStatus = "POI ajoute : $name"
-                (context as MainActivity).savePoi(tripId, name, type, latitude, longitude)
+                val poi = PoiPoint(
+                    name = name,
+                    type = type,
+                    latitude = latitude,
+                    longitude = longitude,
+                    address = address,
+                    timestamp = System.currentTimeMillis()
+                )
+                pois.add(poi)
+                (context as MainActivity).savePoi(tripId, name, type, latitude, longitude, address)
                 showPoiDialog = false
             }
         )
@@ -581,11 +617,23 @@ fun PoiDialog(
     currentLat: String,
     currentLon: String,
     onDismiss: () -> Unit,
-    onConfirm: (name: String, type: String) -> Unit
+    onConfirm: (name: String, type: String, address: String) -> Unit
 ) {
     var poiName by remember { mutableStateOf("") }
     var selectedType by remember { mutableStateOf("Restaurant") }
+    var address by remember { mutableStateOf("Chargement...") }
+    val context = LocalContext.current
     val types = listOf("Restaurant", "Musee", "Hotel", "Monument", "Plage", "Autre")
+
+    LaunchedEffect(currentLat, currentLon) {
+        val lat = currentLat.toDoubleOrNull()
+        val lon = currentLon.toDoubleOrNull()
+        if (lat != null && lon != null) {
+            address = (context as MainActivity).getAddressFromLocation(lat, lon)
+        } else {
+            address = "Position non disponible"
+        }
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -593,8 +641,9 @@ fun PoiDialog(
         text = {
             Column {
                 Text("Position actuelle :", fontWeight = FontWeight.SemiBold)
-                Text("Lat : $currentLat", fontSize = 13.sp, color = Color.Gray)
-                Text("Lon : $currentLon", fontSize = 13.sp, color = Color.Gray)
+                Text(address, fontSize = 13.sp, color = Color(0xFF1F3C88))
+                Text("Lat : $currentLat", fontSize = 11.sp, color = Color.LightGray)
+                Text("Lon : $currentLon", fontSize = 11.sp, color = Color.LightGray)
 
                 Spacer(modifier = Modifier.height(16.dp))
 
@@ -628,7 +677,7 @@ fun PoiDialog(
             Button(
                 onClick = {
                     if (poiName.isNotBlank()) {
-                        onConfirm(poiName, selectedType)
+                        onConfirm(poiName, selectedType, address)
                     }
                 },
                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1565C0))
