@@ -40,7 +40,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
-import com.google.android.gms.location.*
+import com.google.android.gms.location.FusedLocationProviderClient
+import com.google.android.gms.location.LocationCallback
+import com.google.android.gms.location.LocationRequest
+import com.google.android.gms.location.LocationResult
+import com.google.android.gms.location.LocationServices
+import com.google.android.gms.location.Priority
 import com.google.firebase.database.FirebaseDatabase
 import com.google.firebase.storage.FirebaseStorage
 import java.io.File
@@ -325,6 +330,9 @@ fun SmartTripApp(
             onConfirm = { name ->
                 tripName = name
                 tripId = "trip_${System.currentTimeMillis()}"
+
+                selectedHistoryTripId = ""
+                selectedHistoryTripName = ""
 
                 gpsPoints.clear()
                 pois.clear()
@@ -613,7 +621,7 @@ fun TripScreen(
         }
     }
 
-    LaunchedEffect(gpsPoints.size) {
+    LaunchedEffect(gpsPoints.size, pois.size) {
         if (gpsPoints.isNotEmpty()) {
             val lastPoint = gpsPoints.last()
             latitude = lastPoint.latitude.toString()
@@ -627,13 +635,22 @@ fun TripScreen(
             currentLat = latitude,
             currentLon = longitude,
             onDismiss = { showPoiDialog = false },
-            onConfirm = { name, type, address ->
+            onConfirm = { name, type, _ ->
+                val lat = latitude.toDoubleOrNull()
+                val lon = longitude.toDoubleOrNull()
+
+                val realAddress = if (lat != null && lon != null) {
+                    (context as MainActivity).getAddressFromLocation(lat, lon)
+                } else {
+                    "Adresse inconnue"
+                }
+
                 val poi = PoiPoint(
                     name = name,
                     type = type,
                     latitude = latitude,
                     longitude = longitude,
-                    address = address,
+                    address = realAddress,
                     timestamp = System.currentTimeMillis()
                 )
 
@@ -647,8 +664,9 @@ fun TripScreen(
                     type,
                     latitude,
                     longitude,
-                    address
+                    realAddress
                 )
+
                 showPoiDialog = false
             }
         )
