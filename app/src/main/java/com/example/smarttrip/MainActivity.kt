@@ -410,6 +410,7 @@ fun SmartTripApp(
 
         "trip_detail" -> TripDetailScreen(
             tripName = selectedHistoryTripName,
+            tripId = selectedHistoryTripId,
             gpsPoints = gpsPoints,
             pois = pois,
             onBackClick = { currentScreen = "history" },
